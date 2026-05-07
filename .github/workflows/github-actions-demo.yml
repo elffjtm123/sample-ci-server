@@ -19,6 +19,15 @@ jobs:
       - name: Build project
         run: npm run build
 
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: |
+            dist/
+            package.json
+            tsconfig.json
+            tsconfig.build.json
       - run: echo "this job's status is ${{job.status}}."
 
 
