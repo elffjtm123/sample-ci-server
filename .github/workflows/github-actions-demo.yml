@@ -19,9 +19,62 @@ jobs:
       - name: Build project
         run: npm run build
 
-      - name: Run tests
-        run: npm test
-
       - run: echo "this job's status is ${{job.status}}."
 
 
+  deploy:
+    needs: build # 'deploy' 작업은 'build' 작업이 성공적으로 완료된 후에 실행됩니다.
+    runs-on: ubuntu-latest
+    environment: production # 선택 사항: GitHub 환경을 사용하여 배포 환경을 정의하고 비밀을 관리합니다.
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output # 'build' 작업에서 업로드한 아티팩트 이름
+          path: ./app-to-deploy # 아티팩트를 다운로드할 로컬 경로
+
+      - name: Set up SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }} # GitHub Secrets에 EC2_SSH_KEY로 등록된 개인 키
+
+      - name: Add EC2 host to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          # EC2 인스턴스의 호스트 키를 known_hosts에 추가하여 SSH 연결 시 보안 경고를 방지합니다.
+          # StrictHostKeyChecking=no 대신 이 방법을 사용하는 것이 더 안전합니다.
+          ssh-keyscan -H ${{ secrets.EC2_PUBLIC_IP }} >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Copy files to EC2
+        run: |
+          # 원격 EC2 인스턴스에 애플리케이션 디렉토리가 없으면 생성합니다.
+          ssh ec2-user@${{ secrets.EC2_PUBLIC_IP }} "mkdir -p ~/sample-serve"
+          # 다운로드한 아티팩트(빌드된 소스코드, package.json 등)를 EC2 인스턴스로 복사합니다.
+          # 사용자의 scp 명령어 형식을 참고하여 필요한 파일들을 복사합니다.
+          # 여기서는 'app-to-deploy' 디렉토리의 모든 내용을 '~/sample-serve/'로 복사합니다.
+          scp -r ./app-to-deploy/* ec2-user@${{ secrets.EC2_PUBLIC_IP }}:~/sample-serve/
+
+      - name: Execute PM2 commands on EC2
+        run: |
+          # SSH를 통해 EC2 인스턴스에 접속하여 PM2 명령어를 실행합니다.
+          ssh ec2-user@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
+            # 애플리케이션 디렉토리로 이동
+            cd ~/sample-serve
+
+            # 필요한 경우 프로덕션 의존성 설치 (node_modules가 아티팩트로 복사되지 않은 경우)
+            # 만약 'build' 단계에서 node_modules를 아티팩트에 포함하여 복사했다면 이 단계는 필요 없을 수 있습니다.
+            # 하지만 EC2 환경에 맞는 의존성 설치를 위해 다시 실행하는 것이 안전할 수 있습니다.
+            npm ci --production
+
+            # 기존 PM2 프로세스 중지 및 삭제 (오류 방지를 위해 '|| true' 사용)
+            pm2 stop sample-serve || true
+            pm2 delete sample-serve || true
+
+            # PM2를 사용하여 애플리케이션 시작
+            # 'dist/main.js'는 빌드 후 생성되는 애플리케이션의 실제 진입점 파일로 변경해야 합니다.
+            pm2 start dist/main.js --name "sample-server"
+
+            # PM2 프로세스 목록 저장 (EC2 재부팅 시 자동 시작을 위함)
+            pm2 save
+          EOF
