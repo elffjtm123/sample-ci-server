@@ -58,18 +58,18 @@ jobs:
       - name: Copy files to EC2
         run: |
           # 원격 EC2 인스턴스에 애플리케이션 디렉토리가 없으면 생성합니다.
-          ssh ec2-user@${{ secrets.EC2_PUBLIC_IP }} "mkdir -p ~/sample-serve"
+          ssh ec2-user@${{ secrets.EC2_PUBLIC_IP }} "mkdir -p ~/sample-server"
           # 다운로드한 아티팩트(빌드된 소스코드, package.json 등)를 EC2 인스턴스로 복사합니다.
           # 사용자의 scp 명령어 형식을 참고하여 필요한 파일들을 복사합니다.
-          # 여기서는 'app-to-deploy' 디렉토리의 모든 내용을 '~/sample-serve/'로 복사합니다.
-          scp -r ./app-to-deploy/* ec2-user@${{ secrets.EC2_PUBLIC_IP }}:~/sample-serve/
+          # 여기서는 'app-to-deploy' 디렉토리의 모든 내용을 '~/sample-server/'로 복사합니다.
+          scp -r ./app-to-deploy/* ec2-user@${{ secrets.EC2_PUBLIC_IP }}:~/sample-server/
 
       - name: Execute PM2 commands on EC2
         run: |
           # SSH를 통해 EC2 인스턴스에 접속하여 PM2 명령어를 실행합니다.
           ssh ec2-user@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
             # 애플리케이션 디렉토리로 이동
-            cd ~/sample-serve
+            cd ~/sample-server
 
             # 필요한 경우 프로덕션 의존성 설치 (node_modules가 아티팩트로 복사되지 않은 경우)
             # 만약 'build' 단계에서 node_modules를 아티팩트에 포함하여 복사했다면 이 단계는 필요 없을 수 있습니다.
@@ -77,8 +77,8 @@ jobs:
             npm ci --production
 
             # 기존 PM2 프로세스 중지 및 삭제 (오류 방지를 위해 '|| true' 사용)
-            pm2 stop sample-serve || true
-            pm2 delete sample-serve || true
+            pm2 stop sample-server || true
+            pm2 delete sample-server || true
 
             # PM2를 사용하여 애플리케이션 시작
             # 'dist/main.js'는 빌드 후 생성되는 애플리케이션의 실제 진입점 파일로 변경해야 합니다.
