@@ -1,9 +1,14 @@
 name: Node.js CI/CD
 on:
   push:
-    branches: [ master, main ] # master와 main 브랜치 모두에 반응하도록 수정
+    branches: [ main ] # 실제 사용 중인 main 브랜치만 지정
   pull_request:
-    branches: [ master, main ]
+    branches: [ main ]
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REGISTRY: 288947333749.dkr.ecr.ap-northeast-2.amazonaws.com
+  ECR_REPOSITORY: sample-server # 리포지토리 이름을 여기에 직접 입력하세요.
 
 jobs:
   build-and-push:
@@ -19,14 +24,14 @@ jobs:
       - name: Generate version tag
         id: version
         run: |
-         echo "version=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+        echo "version=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
     
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-northeast-2
+          aws-region: ${{ env.AWS_REGION }}
     
       - name: Login to Amazon ECR
         id: login-ecr
@@ -37,21 +42,19 @@ jobs:
 
       - name: Build and push Docker image 
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ steps.version.outputs.version }}
         run: |
           docker buildx create --use
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
-            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
-            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG \
+            -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest \
             --push .
 
   deploy:
     name: Deploy to EC2
     needs: build-and-push
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/main' # master를 main으로 수정
     runs-on: ubuntu-latest
     
     steps:
@@ -68,13 +71,13 @@ jobs:
           echo "[default]" > ~/.aws/credentials
           echo "aws_access_key_id = ${{ secrets.AWS_ACCESS_KEY_ID }}" >> ~/.aws/credentials
           echo "aws_secret_access_key = ${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> ~/.aws/credentials
-          echo "region = ${{ secrets.AWS_REGION }}" >> ~/.aws/credentials
+          echo "region = ${{ env.AWS_REGION }}" >> ~/.aws/credentials
 
           # Step 2: Login to ECR
-          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
 
           # Step 3: Pull the new image
-          docker pull ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ needs.build-and-push.outputs.image_tag }}
+          docker pull ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ needs.build-and-push.outputs.image_tag }}
 
           # Step 4: Stop and remove the old container
           docker stop sample-server || true
@@ -84,7 +87,7 @@ jobs:
           # 데이터베이스를 사용하지 않으므로, 별도의 .env 파일 없이 컨테이너를 실행합니다.
           # NestJS 앱은 PORT 환경 변수가 없으면 3000번 포트를 기본값으로 사용합니다.
           docker run -d --name sample-server -p 3000:3000 \
-            ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ needs.build-and-push.outputs.image_tag }}
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ needs.build-and-push.outputs.image_tag }}
 
           # Step 6: Health Check
           echo "Waiting 10 seconds for container health check..."
