@@ -82,6 +82,10 @@ jobs:
           # Step 4: Stop and remove the old container (항상 성공하도록 || true 추가)
           docker stop sample-server || true
           docker rm sample-server || true
+          
+          # 3000번 포트를 점유하고 있는 다른 프로세스(PM2, 노드 등)가 있다면 강제 종료
+          # fuser 명령어가 없다면 설치(sudo yum install psmisc -y)가 필요할 수 있습니다.
+          sudo fuser -k 3000/tcp || true
 
           # Step 5: Run the new container
           # 데이터베이스를 사용하지 않으므로, 별도의 .env 파일 없이 컨테이너를 실행합니다.
