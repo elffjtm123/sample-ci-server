@@ -54,18 +54,27 @@ jobs:
           username: ec2-user # EC2 인스턴스 사용자 이름 (예: ubuntu, ec2-user)
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            # 1. AWS ECR에 로그인합니다. (EC2 인스턴스에 IAM 역할이 연결되어 있다면 이 단계는 생략 가능합니다.)
+            # 1. AWS 자격 증명 파일 생성 (보안상 IAM 역할 사용을 권장합니다)
+            # ~/.aws 디렉토리가 없으면 생성합니다.
+            mkdir -p ~/.aws
+            # GitHub Secrets에서 AWS 자격 증명을 읽어와 credentials 파일에 씁니다.
+            echo "[default]" > ~/.aws/credentials
+            echo "aws_access_key_id = ${{ secrets.AWS_ACCESS_KEY_ID }}" >> ~/.aws/credentials
+            echo "aws_secret_access_key = ${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> ~/.aws/credentials
+            echo "region = ap-northeast-2" >> ~/.aws/credentials
+            
+            # 2. AWS ECR에 로그인합니다.
             aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
             
-            # 2. 배포할 최신 이미지를 pull 합니다.
+            # 3. 배포할 최신 이미지를 pull 합니다.
             docker pull ${{ steps.login-ecr.outputs.registry }}/sample-server:${{ github.sha }}
             
-            # 3. 기존에 실행 중인 컨테이너가 있다면 중지하고 제거합니다.
+            # 4. 기존에 실행 중인 컨테이너가 있다면 중지하고 제거합니다.
             docker stop sample-server || true
             docker rm sample-server || true
             
-            # 4. 새로운 이미지로 컨테이너를 실행합니다.
+            # 5. 새로운 이미지로 컨테이너를 실행합니다.
             docker run -d --name sample-server --restart always -p 3000:3000 --env-file /home/ec2-user/sample-server.env ${{ steps.login-ecr.outputs.registry }}/sample-server:${{ github.sha }}
             
-            # 5. 사용하지 않는 Docker 이미지 정리 (선택 사항)
+            # 6. 사용하지 않는 Docker 이미지 정리 (선택 사항)
             docker image prune -f
