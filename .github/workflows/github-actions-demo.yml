@@ -63,7 +63,7 @@ jobs:
       with:
         host: ${{ secrets.EC2_PUBLIC_IP }}
         username: ${{ secrets.EC2_USERNAME }}
-        key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        key: ${{ secrets.EC2_SSH_KEY }} # Secrets에 등록된 이름과 일치시켜야 합니다.
         script: |
           # Step 1: Configure AWS CLI (보안을 위해 EC2에 IAM 역할을 연결하는 것을 강력히 권장합니다)
           # 이 스크립트는 매 배포마다 자격 증명을 새로 설정하여 `aws configure`가 필요 없도록 합니다.
@@ -79,7 +79,7 @@ jobs:
           # Step 3: Pull the new image
           docker pull ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ needs.build-and-push.outputs.image_tag }}
 
-          # Step 4: Stop and remove the old container
+          # Step 4: Stop and remove the old container (항상 성공하도록 || true 추가)
           docker stop sample-server || true
           docker rm sample-server || true
 
@@ -87,11 +87,11 @@ jobs:
           # 데이터베이스를 사용하지 않으므로, 별도의 .env 파일 없이 컨테이너를 실행합니다.
           # NestJS 앱은 PORT 환경 변수가 없으면 3000번 포트를 기본값으로 사용합니다.
           docker run -d --name sample-server -p 3000:3000 \
-            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ needs.build-and-push.outputs.image_tag }}
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ needs.build-and-push.outputs.image_tag }} || exit 1
 
           # Step 6: Health Check
-          echo "Waiting 10 seconds for container health check..."
-          sleep 10
+          echo "Waiting 5 seconds for container health check..."
+          sleep 5
           if [ ! "$(docker ps -q -f name=sample-server)" ]; then
             echo "❌ Container failed to start. Displaying logs:"
             docker logs sample-server
