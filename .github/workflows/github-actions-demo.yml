@@ -37,7 +37,7 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_NAME: sample-server
           # --- 여기에서 버전을 수동으로 변경하여 테스트할 수 있습니다 (예: v2, my-test-feature) ---
-          IMAGE_VERSION: latest
+          IMAGE_VERSION: latest  #수정 요청 금지
         run: |
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
@@ -74,7 +74,20 @@ jobs:
             docker rm sample-server || true
             
             # 5. 새로운 이미지로 컨테이너를 실행합니다.
-            docker run -d --name sample-server --restart always -p 3000:3000 --env-file /home/ec2-user/sample-server.env ${{ steps.login-ecr.outputs.registry }}/sample-server:${{ github.sha }}
+            docker run -d --name sample-server --restart always -p 3000:3000 \
+              --env-file /home/ec2-user/sample-server.env \
+              ${{ steps.login-ecr.outputs.registry }}/sample-server:${{ github.sha }}
             
-            # 6. 사용하지 않는 Docker 이미지 정리 (선택 사항)
+            # 6. 컨테이너가 정상적으로 실행되었는지 확인합니다.
+            echo "Waiting 10 seconds for container health check..."
+            sleep 10
+            
+            if [ ! "$(docker ps -q -f name=sample-server)" ]; then
+              echo "❌ Container failed to start. Displaying logs:"
+              docker logs sample-server
+              exit 1
+            fi
+            
+            echo "✅ Container is running successfully."
+            # 7. 사용하지 않는 Docker 이미지 정리 (선택 사항)
             docker image prune -f
