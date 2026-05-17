@@ -22,6 +22,10 @@ FROM node:20-alpine
 
 WORKDIR /usr/src/app
 
+# tini를 설치하여 경량 init 프로세스로 사용합니다.
+# 이는 올바른 시그널 처리와 좀비 프로세스 정리를 보장합니다.
+RUN apk add --no-cache tini
+
 COPY package*.json ./
 # 운영에 필요한 의존성만 설치
 RUN npm ci --omit=dev
@@ -32,5 +36,8 @@ COPY --from=builder /usr/src/app/dist ./dist
 # 애플리케이션이 실행될 포트 노출
 EXPOSE 3000
 
-# 애플리케이션 실행
+# tini를 ENTRYPOINT로 설정하여 node 애플리케이션을 자식 프로세스로 실행합니다.
+ENTRYPOINT ["/sbin/tini", "--"]
+
+# 컨테이너의 기본 실행 명령어를 지정합니다.
 CMD ["node", "dist/main.js"]
